@@ -18,12 +18,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
 // PostgreSQL Connection Config
+// const pool = new Pool({
+//   user: process.env.DB_USER || 'postgres',
+//   host: process.env.DB_HOST || 'localhost',
+//   database: process.env.DB_NAME || 'CocoYeah',
+//   password: process.env.DB_PASSWORD || 'Edition012',
+//   port: process.env.DB_PORT || 5432,
+// });
+
+// PostgreSQL Connection Config (ใช้ DATABASE_URL สำหรับ Heroku Deployment)
 const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'CocoYeah',
-  password: process.env.DB_PASSWORD || 'Edition012',
-  port: process.env.DB_PORT || 5432,
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 // Helper Function: แปลง User ID ปลอดภัย
