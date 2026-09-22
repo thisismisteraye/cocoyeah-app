@@ -1,0 +1,2048 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coco Yeah - ระบบจัดการสต๊อกวัตถุดิบ</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        // ตรวจสอบว่าได้ Login แล้วหรือยัง
+        const currentUser = JSON.parse(localStorage.getItem('user_info'));
+        const currentUserId = currentUser ? (currentUser.id || 1) : 1;
+
+        if (!currentUser) {
+            window.location.href = 'login.html';
+        }
+
+        function logout() {
+            localStorage.removeItem('user_info');
+            localStorage.removeItem('last_midnight_check');
+            window.location.href = 'login.html';
+        }
+
+        function toggleUserDropdown() {
+            const menu = document.getElementById('userDropdownMenu');
+            if (menu) menu.classList.toggle('hidden');
+        }
+
+        window.addEventListener('click', function(e) {
+            const btn = document.getElementById('userDropdownBtn');
+            const menu = document.getElementById('userDropdownMenu');
+            if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+                menu.classList.add('hidden');
+            }
+        });
+    </script> 
+    <script>
+        import i18next from 'i18next';
+        import Backend from 'i18next-http-backend';
+
+        i18next
+        .use(Backend)
+        .init({
+            lng: 'th', // ตั้งค่าภาษาเริ่มต้น (ไทย)
+            fallbackLng: 'th', // ภาษาสำรองหากไม่พบไฟล์แปล
+            backend: {
+            loadPath: '/locales/{{lng}}/translation.json', // 
+            }
+        }, () => {
+            updateContent();
+        });
+
+        // ฟังก์ชันสำหรับอัปเดตข้อความบน HTML เมื่อเปลี่ยนภาษา
+        function updateContent() {
+        document.querySelectorAll('[data-i18n]').forEach((element) => {
+            const key = element.getAttribute('data-i18n');
+            element.innerHTML = i18next.t(key);
+        });
+        }
+
+        // ฟังก์ชันสำหรับเปลี่ยนภาษา (เช่น เมื่อกดปุ่มเปลี่ยนเป็นภาษาจีน)
+        window.changeLanguage = function(lng) {
+        i18next.changeLanguage(lng, () => {
+            updateContent();
+        });
+        }
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { prompt: ['Prompt', 'sans-serif'] },
+                    colors: {
+                        coco: {
+                            50: '#f0fdf4', 100: '#dcfce7', 500: '#22c55e',
+                            600: '#16a34a', 700: '#15803d', 800: '#166534', 900: '#14532d'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- SheetJS (xlsx) for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- jsPDF & AutoTable for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body class="bg-slate-100 font-prompt text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- HEADER / NAVBAR -->
+    <header class="bg-coco-900 text-white shadow-lg sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <!-- ปุ่ม Hamburger Menu บนจอเล็ก -->
+                <button onclick="toggleMobileMenu()" class="sm:hidden text-white p-2 focus:outline-none text-xl">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="bg-emerald-500 text-coco-900 p-2 rounded-xl font-black text-xl flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10">
+                    <img src="โลโก้.png" alt="Logo" class="w-full h-full object-contain">
+                </div>
+                <div>
+                    <h1 class="font-bold text-sm sm:text-lg leading-tight">Coco Yeah Stock System</h1>
+                    <p class="text-[9px] sm:text-[10px] text-emerald-300">ระบบคลังวัตถุดิบและเช็คสต๊อกหน้าร้าน</p>
+                </div>
+            </div>
+
+            <!-- User Actions (Mobile First Responsive) -->
+            <div class="flex items-center gap-1.5 sm:gap-3">
+                <button onclick="openAddItemModal()" class="bg-emerald-500 hover:bg-emerald-600 text-coco-900 font-bold px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs flex items-center gap-1 transition shadow-sm">
+                    <i class="fa-solid fa-plus"></i> <span class="hidden md:inline">เพิ่มวัตถุดิบ</span>
+                </button>
+                <button onclick="openAddWasteModal()" class="bg-rose-500 hover:bg-rose-600 text-white font-bold px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl text-xs flex items-center gap-1 transition shadow-sm">
+                    <i class="fa-solid fa-trash-can"></i> <span class="hidden md:inline">บันทึกของเสีย</span>
+                </button>
+
+                <!-- USER PROFILE DROPDOWN -->
+                <div class="relative">
+                    <button id="userDropdownBtn" onclick="toggleUserDropdown()" class="flex items-center gap-1.5 bg-coco-800 hover:bg-coco-700 text-white px-2.5 py-1.5 sm:px-3 rounded-xl transition text-xs border border-emerald-600/30">
+                        <i class="fa-solid fa-circle-user text-base sm:text-xl text-emerald-400"></i>
+                        <div class="text-right hidden sm:block">
+                            <span id="displayUsername" class="block font-semibold"></span>
+                            <span id="displayRole" class="block text-[9px] text-emerald-300 uppercase font-bold"></span>
+                        </div>
+                    </button>
+                    <!-- Dropdown items -->
+                    <div id="userDropdownMenu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 py-1 z-50 text-slate-700 text-xs">
+                        <button onclick="openReportModal()" class="w-full text-left px-4 py-2 hover:bg-slate-50 flex items-center gap-2">
+                            <i class="fa-solid fa-file-arrow-down text-emerald-600"></i> ดาวน์โหลดรายงาน
+                        </button>
+                        <button onclick="openSettingsModal()" class="w-full text-left px-4 py-2 hover:bg-slate-50 flex items-center gap-2">
+                            <i class="fa-solid fa-gear text-slate-500"></i> ตั้งค่าโปรไฟล์
+                        </button>
+                        <hr class="my-1 border-slate-100">
+                        <button onclick="logout()" class="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 flex items-center gap-2">
+                            <i class="fa-solid fa-right-from-bracket"></i> ออกจากระบบ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- NAVIGATION TABS (รองรับ Mobile Hamburger & Scrollable) -->
+    <nav id="mobileNavMenu" class="hidden sm:block bg-white border-b border-slate-200 sticky top-16 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row overflow-x-auto space-y-1 sm:space-y-0 sm:space-x-2 py-2 no-scrollbar">
+            <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap bg-coco-800 text-white shadow-sm">
+                <i class="fa-solid fa-chart-pie"></i> ภาพรวม (Dashboard)
+            </button>
+            <button onclick="switchTab('daily')" id="nav-daily" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-calendar-day"></i> นับรายวัน (Daily)
+            </button>
+            <button onclick="switchTab('monthly')" id="nav-monthly" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-calendar-check"></i> นับรายเดือน (Monthly)
+            </button>
+            <button onclick="switchTab('receiving')" id="nav-receiving" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-truck-ramp-box"></i> บันทึกรับเข้า (Stock In)
+            </button>
+            <button onclick="switchTab('history')" id="nav-history" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-clock-rotate-left"></i> ประวัตินับย้อนหลัง
+            </button>
+            <button onclick="switchTab('waste')" id="nav-waste" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-trash-can-arrow-up"></i> ของเสีย / ตัดแต่ง
+            </button>
+            <button onclick="switchTab('users')" id="nav-users" class="tab-btn hidden px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap text-slate-600 hover:bg-slate-100">
+                <i class="fa-solid fa-users-gear"></i> จัดการผู้ใช้ (Users)
+            </button>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTENT CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+        <!-- TAB 1: DASHBOARD -->
+        <section id="tab-dashboard" class="tab-content space-y-6">
+            <!-- Summary Metric Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-emerald-100 text-emerald-700 rounded-xl"><i class="fa-solid fa-boxes-stacked text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">วัตถุดิบทั้งหมด</p>
+                        <h3 id="statTotalItems" class="text-xl font-bold text-slate-800">0</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-amber-100 text-amber-700 rounded-xl"><i class="fa-solid fa-triangle-exclamation text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">เตือนสต๊อกต่ำ</p>
+                        <h3 id="statLowStock" class="text-xl font-bold text-amber-600">0</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-blue-100 text-blue-700 rounded-xl"><i class="fa-solid fa-coins text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">มูลค่าคลังรวม</p>
+                        <h3 id="statTotalValue" class="text-xl font-bold text-slate-800">฿0.00</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-purple-100 text-purple-700 rounded-xl"><i class="fa-solid fa-arrows-rotate text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">สถานะ Auto-Refresh</p>
+                        <h3 class="text-xs font-bold text-emerald-600 flex items-center gap-1 mt-1">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> ทำงานทุก 5 วิ
+                        </h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table Header & Filters -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-slate-50">
+                    <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-coco-600"></i> รายการวัตถุดิบในคลัง
+                    </h2>
+                    
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <div class="relative flex-grow sm:flex-grow-0">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                            <input type="text" id="dashboardSearch" oninput="renderDashboard()" placeholder="ค้นหารหัส/ชื่อวัตถุดิบ..." 
+                                   class="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none text-slate-700 w-full sm:w-48">
+                        </div>
+
+                        <select id="dashboardCategoryFilter" onchange="renderDashboard()" 
+                                class="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none text-slate-700 font-medium">
+                            <option value="">-- หมวดหมู่ทั้งหมด --</option>
+                        </select>
+
+                        <button onclick="clearDashboardFilter()" class="bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition">
+                            ล้างค่า
+                        </button>
+                        <span id="lastUpdatedTime" class="text-xs text-slate-400 ml-auto md:ml-2">อัปเดตล่าสุด: -</span>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 uppercase font-semibold text-[11px] border-b border-slate-200">
+                            <tr>
+                                <th class="p-3 pl-4 sm:pl-5">รหัส / วัตถุดิบ</th>
+                                <th class="p-3">หมวดหมู่</th>
+                                <th class="p-3 text-right">คงเหลือ</th>
+                                <th class="p-3 text-center">หน่วย</th>
+                                <th class="p-3 text-right">ราคา/หน่วย</th>
+                                <th class="p-3 text-right">มูลค่ารวม</th>
+                                <th class="p-3 text-center">สถานะ</th>
+                                <th class="p-3 text-center pr-4 sm:pr-5">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboardTableBody" class="divide-y divide-slate-100">
+                            <tr><td colspan="8" class="text-center py-8 text-slate-400">กำลังโหลดข้อมูล...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: DAILY STOCK COUNT -->
+        <section id="tab-daily" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base">นับสต๊อกรายวัน (Daily Count)</h2>
+                    <p class="text-xs text-slate-500">ประจำวันที่: <span id="dailyCountDate" class="font-semibold text-coco-700">-</span></p>
+                </div>
+                <button onclick="saveStockCount('Daily')" class="bg-coco-600 hover:bg-coco-700 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> บันทึกผลการนับรายวัน
+                </button>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 uppercase font-semibold text-[11px] border-b border-slate-200">
+                            <tr>
+                                <th class="p-3 pl-4 sm:pl-5">รายการวัตถุดิบ</th>
+                                <th class="p-3">หน่วย</th>
+                                <th class="p-3 text-right">ยอดในระบบ</th>
+                                <th class="p-3 text-center w-32">ยอดนับจริง</th>
+                                <th class="p-3 text-right">ผลต่าง</th>
+                                <th class="p-3 text-right">มูลค่าผลต่าง</th>
+                                <th class="p-3 pr-4 sm:pr-5">หมายเหตุ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dailyStockTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: MONTHLY STOCK COUNT -->
+        <section id="tab-monthly" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base">นับสต๊อกใหญ่ประจำเดือน (Monthly Count)</h2>
+                    <p class="text-xs text-slate-500">ประจำวันที่: <span id="monthlyCountDate" class="font-semibold text-coco-700">-</span></p>
+                </div>
+                <button onclick="saveStockCount('Monthly')" class="bg-coco-600 hover:bg-coco-700 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> บันทึกผลการนับประจำเดือน
+                </button>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 uppercase font-semibold text-[11px] border-b border-slate-200">
+                            <tr>
+                                <th class="p-3 pl-4 sm:pl-5">รายการวัตถุดิบ</th>
+                                <th class="p-3">หน่วย</th>
+                                <th class="p-3 text-right">ยอดในระบบ</th>
+                                <th class="p-3 text-center w-32">ยอดนับจริง</th>
+                                <th class="p-3 text-right">ผลต่าง</th>
+                                <th class="p-3 text-right">มูลค่าผลต่าง</th>
+                                <th class="p-3 pr-4 sm:pr-5">หมายเหตุ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlyStockTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: RECEIVING (STOCK IN) -->
+        <section id="tab-receiving" class="tab-content hidden space-y-4 sm:space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-xl mx-auto space-y-4">
+                <div class="border-b border-slate-100 pb-3 flex items-center gap-2 text-coco-800 font-bold text-base">
+                    <i class="fa-solid fa-truck-ramp-box text-emerald-600"></i> บันทึกรับเข้าวัตถุดิบ (Stock In)
+                </div>
+
+                <form id="receivingForm" onsubmit="handleStockReceiving(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">เลือกวัตถุดิบ</label>
+                        <select id="recvItemId" required class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                            <option value="">-- กำลังโหลดรายการ --</option>
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">จำนวนรับเข้า</label>
+                            <input type="number" step="any" id="recvQty" required placeholder="0.00"
+                                   class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none font-bold text-slate-800">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">ราคาซื้อรวม (บาท)</label>
+                            <input type="number" step="0.01" id="recvTotalPrice" placeholder="0.00"
+                                   class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">หมายเหตุ / เลขที่ใบส่งของ</label>
+                        <input type="text" id="recvNote" placeholder="เช่น ใบเสร็จ #10023 จากตลาดสด"
+                               class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-coco-600 hover:bg-coco-700 text-white font-bold py-3 rounded-xl shadow-md transition text-xs sm:text-sm flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-square-plus"></i> ยืนยันการรับเข้าสินค้า
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB 5: AUDIT LOG HISTORY -->
+        <section id="tab-history" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-coco-600"></i> ประวัติการทำรายการสต๊อก (รายวัน)
+                    </h2>
+                    <p class="text-xs text-slate-400">เลือกวันที่ต้องการเพื่อตรวจสอบประวัติการรับเข้า-จ่ายออก</p>
+                </div>
+                
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="date" id="historyFilterDate" class="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none text-slate-700 font-medium">
+                    <button onclick="renderHistoryTable()" class="bg-coco-700 hover:bg-coco-800 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                        <i class="fa-solid fa-filter"></i> กรองข้อมูล
+                    </button>
+                    <button onclick="clearHistoryFilter()" class="bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition">
+                        ทั้งหมด
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 uppercase font-semibold text-[11px] border-b border-slate-200">
+                            <tr>
+                                <th class="p-3 pl-4 sm:pl-5">วัน-เวลา</th>
+                                <th class="p-3">วัตถุดิบ</th>
+                                <th class="p-3 text-center">ประเภท</th>
+                                <th class="p-3 text-right">จำนวน</th>
+                                <th class="p-3">ผู้บันทึก</th>
+                                <th class="p-3 pr-4 sm:pr-5">หมายเหตุ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody" class="divide-y divide-slate-100">
+                            <tr><td colspan="6" class="text-center py-6 text-slate-400">กำลังดึงข้อมูลประวัติ...</td></tr>
+                        </tbody>
+                    </table>
+                    <!-- Controls ด้านล่างตาราง -->
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-slate-200 bg-slate-50">
+                        <div class="text-xs text-slate-500" id="paginationInfo">
+                            แสดง 0 ถึง 0 จากทั้งหมด 0 รายการ
+                        </div>
+                        
+                        <div class="flex items-center gap-1.5" id="paginationControls">
+                            <button onclick="changePage(-1)" id="btnPrevPage" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fa-solid fa-chevron-left"></i> ก่อนหน้า
+                            </button>
+                            
+                            <span id="pageNumbers" class="flex gap-1 text-xs font-medium"></span>
+                            
+                            <button onclick="changePage(1)" id="btnNextPage" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                ถัดไป <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 6: WASTE & TRIMMING -->
+        <section id="tab-waste" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 space-y-4">
+                
+                <!-- Header & Filter Controls -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-100 pb-3">
+                    <div>
+                        <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2">
+                            <i class="fa-solid fa-trash-can-arrow-up text-rose-500"></i> สรุปและจัดการรายการของเสีย / ตัดแต่ง
+                        </h2>
+                        <p class="text-[11px] sm:text-xs text-slate-400">บันทึก แก้ไข หรือค้นหาประวัติการสูญเสียสต๊อก</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <input type="date" id="wasteDateFilter" onchange="renderWasteTable()" class="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-medium">
+                        <select id="wasteTypeFilter" onchange="renderWasteTable()" class="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-medium">
+                            <option value="">-- ทั้งหมดทุกประเภท --</option>
+                            <option value="WASTE">ของเสีย / เน่าเสีย</option>
+                            <option value="TRIM">ของตัดแต่ง</option>
+                            <option value="EXPIRE">หมดอายุ</option>
+                        </select>
+                        <button onclick="clearWasteFilter()" class="bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition">
+                            ล้างค่า
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Metric Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="bg-rose-50 border border-rose-100 rounded-xl p-3 flex justify-between items-center">
+                        <div>
+                            <p class="text-[11px] text-rose-600 font-medium">มูลค่าของเสียรวมวันนี้</p>
+                            <h4 id="todayWasteValue" class="text-base sm:text-lg font-bold text-rose-700">฿0.00</h4>
+                        </div>
+                        <i class="fa-solid fa-dumpster text-rose-300 text-2xl"></i>
+                    </div>
+                    <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 flex justify-between items-center">
+                        <div>
+                            <p class="text-[11px] text-amber-600 font-medium">ยอดตัดแต่งสะสมเดือนนี้</p>
+                            <h4 id="monthTrimValue" class="text-base sm:text-lg font-bold text-amber-700">฿0.00</h4>
+                        </div>
+                        <i class="fa-solid fa-scissors text-amber-300 text-2xl"></i>
+                    </div>
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center">
+                        <div>
+                            <p class="text-[11px] text-slate-500 font-medium">รายการสูญเสียทั้งหมด</p>
+                            <h4 id="wasteItemCount" class="text-base sm:text-lg font-bold text-slate-700">0 รายการ</h4>
+                        </div>
+                        <i class="fa-solid fa-receipt text-slate-300 text-2xl"></i>
+                    </div>
+                </div>
+
+                <!-- Table Responsive -->
+                <div class="overflow-x-auto rounded-xl border border-slate-100">
+                    <table class="w-full text-left text-xs min-w-[600px]">
+                        <thead class="bg-slate-50 text-slate-500 font-semibold uppercase border-b border-slate-200">
+                            <tr>
+                                <th class="p-2.5 pl-4">วันที่ - เวลา</th>
+                                <th class="p-2.5">วัตถุดิบ</th>
+                                <th class="p-2.5 text-center">ประเภท</th>
+                                <th class="p-2.5 text-right">จำนวน</th>
+                                <th class="p-2.5 text-right">รวมมูลค่าเสีย</th>
+                                <th class="p-2.5">สาเหตุ</th>
+                                <th class="p-2.5 text-center pr-4">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wasteTableBody" class="divide-y divide-slate-100">
+                            <tr><td colspan="7" class="text-center py-4 text-slate-400">กำลังดึงข้อมูลรายการของเสีย...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 7: USERS MANAGEMENT -->
+        <section id="tab-users" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+                <div>
+                    <h2 class="font-bold text-slate-800 text-base flex items-center gap-2">
+                        <i class="fa-solid fa-users-gear text-coco-600"></i> จัดการผู้ใช้งานระบบ (Users Management)
+                    </h2>
+                    <p class="text-xs text-slate-500">จัดการสิทธิ์บัญชีผู้ใช้งาน เพิ่ม แก้ไข ปรับบทบาท หรือลบผู้ใช้งานในระบบ</p>
+                </div>
+                <button onclick="openAddUserModal()" class="bg-coco-600 hover:bg-coco-700 text-white font-bold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus"></i> เพิ่มผู้ใช้งานใหม่
+                </button>
+            </div>
+
+            <!-- Users Metric Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-indigo-100 text-indigo-700 rounded-xl"><i class="fa-solid fa-users text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">ผู้ใช้งานทั้งหมด</p>
+                        <h3 id="statTotalUsers" class="text-xl font-bold text-slate-800">0</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-purple-100 text-purple-700 rounded-xl"><i class="fa-solid fa-user-shield text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">ผู้ดูแลระบบ (Admin)</p>
+                        <h3 id="statAdminUsers" class="text-xl font-bold text-purple-700">0</h3>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                    <div class="p-3 bg-emerald-100 text-emerald-700 rounded-xl"><i class="fa-solid fa-user-check text-xl"></i></div>
+                    <div>
+                        <p class="text-xs text-slate-500 font-medium">พนักงานทั่วไป (Staff)</p>
+                        <h3 id="statStaffUsers" class="text-xl font-bold text-emerald-700">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Table -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 uppercase font-semibold text-[11px] border-b border-slate-200">
+                            <tr>
+                                <th class="p-3 pl-4 sm:pl-5">ID / Username</th>
+                                <th class="p-3">ชื่อ-นามสกุล (Display Name)</th>
+                                <th class="p-3">อีเมล</th>
+                                <th class="p-3 text-center">สิทธิ์การใช้งาน (Role)</th>
+                                <th class="p-3 text-center">วันที่สร้าง</th>
+                                <th class="p-3 text-center pr-4 sm:pr-5">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody" class="divide-y divide-slate-100">
+                            <tr><td colspan="6" class="text-center py-6 text-slate-400">กำลังโหลดข้อมูลผู้ใช้...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: ADD / EDIT ITEM -->
+    <div id="itemModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden my-auto border border-slate-100">
+            <div class="bg-coco-900 p-5 text-white flex justify-between items-center">
+                <h3 id="itemModalTitle" class="font-bold text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-packing text-emerald-400"></i> เพิ่มวัตถุดิบใหม่
+                </h3>
+                <button onclick="closeItemModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="itemForm" onsubmit="handleSaveItem(event)" class="p-6 space-y-4">
+                <input type="hidden" id="modalItemId">
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">รหัสสินค้า / Item Code</label>
+                        <input type="text" id="modalItemCode" required placeholder="เช่น VG001" 
+                               class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">หมวดหมู่</label>
+                        <select id="modalCategoryId" required class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                            <option value="">-- เลือกหมวดหมู่ --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ชื่อวัตถุดิบ / Item Name</label>
+                    <input type="text" id="modalItemName" required placeholder="เช่น มะพร้าวน้ำหอม" 
+                           class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">หน่วยนับ</label>
+                        <input type="text" id="modalUnit" required placeholder="เช่น กก., ลูก, ถุง" 
+                               class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ราคาซื้อ/หน่วย</label>
+                        <input type="number" step="0.01" id="modalUnitCost" required placeholder="0.00" 
+                               class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">เกณฑ์สต๊อกต่ำ</label>
+                        <input type="number" step="any" id="modalMinThreshold" required placeholder="10" 
+                               class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                    </div>
+                </div>
+
+                <div id="initialQtyContainer">
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ยอดยกมาเริ่มต้น (จำนวน)</label>
+                    <input type="number" step="any" id="modalInitialQty" placeholder="0" 
+                           class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeItemModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-xs font-bold bg-coco-600 hover:bg-coco-700 text-white rounded-xl shadow-md transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i> บันทึกข้อมูล
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD / EDIT USER -->
+    <div id="userModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden my-auto border border-slate-100">
+            <div class="bg-coco-900 p-5 text-white flex justify-between items-center">
+                <h3 id="userModalTitle" class="font-bold text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus text-emerald-400"></i> เพิ่มผู้ใช้งานใหม่
+                </h3>
+                <button onclick="closeUserModal()" class="text-slate-400 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="userForm" onsubmit="handleSaveUser(event)" class="p-6 space-y-4">
+                <input type="hidden" id="modalUserId">
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ชื่อเข้าใช้งาน (Username)</label>
+                    <input type="text" id="modalUsername" required placeholder="เช่น admin_coco" 
+                           class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ชื่อ-นามสกุล (Display Name)</label>
+                    <input type="text" id="modalName" required placeholder="เช่น Somchai Jaidee" 
+                           class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">อีเมล (Email)</label>
+                    <input type="email" id="modalEmail" placeholder="user@cocoyeah.com" 
+                           class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">สิทธิ์การใช้งาน (Role)</label>
+                    <select id="modalRole" required class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none font-bold text-slate-700">
+                        <option value="staff">Staff (พนักงานทั่วไป)</option>
+                        <option value="admin">Admin (ผู้ดูแลระบบ)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">รหัสผ่าน <span id="passwordHelpText" class="text-slate-400 text-[10px] font-normal">(เว้นว่างหากไม่ต้องการเปลี่ยน)</span></label>
+                    <input type="password" id="modalPassword" placeholder="อย่างน้อย 6 ตัวอักษร" 
+                           class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-coco-500 focus:outline-none">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeUserModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-xs font-bold bg-coco-600 hover:bg-coco-700 text-white rounded-xl shadow-md transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i> บันทึกข้อมูล
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD WASTE LOG -->
+    <div id="wasteModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden my-auto border border-slate-100">
+            <div class="bg-rose-600 p-5 text-white flex justify-between items-center">
+                <h3 class="font-bold text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can text-rose-200"></i> บันทึกของเสีย / ของตัดแต่ง
+                </h3>
+                <button onclick="closeWasteModal()" class="text-rose-200 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="wasteForm" onsubmit="handleSaveWaste(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">เลือกวัตถุดิบที่เสีย</label>
+                    <select id="wasteItemId" required class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none">
+                        <option value="">-- เลือกวัตถุดิบ --</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">จำนวนที่เสีย/ตัดออก</label>
+                        <input type="number" step="any" id="wasteQty" required placeholder="0.00" 
+                            class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-bold text-rose-600">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">ประเภท</label>
+                        <select id="wasteType" required class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none">
+                            <option value="WASTE">ของเสีย / เน่าเสีย</option>
+                            <option value="TRIM">ของตัดแต่ง / ส่วนสูญเสีย</option>
+                            <option value="EXPIRE">หมดอายุ</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1 uppercase">สาเหตุ / หมายเหตุ</label>
+                    <input type="text" id="wasteReason" placeholder="เช่น มะพร้าวเน่า 2 ลูก, ตัดก้านออก" 
+                        class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                    <button type="button" onclick="closeWasteModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-floppy-disk"></i> ยืนยันตัดสต๊อกของเสีย
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: DOWNLOAD REPORTS -->
+    <div id="reportModal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100">
+            <div class="bg-coco-800 p-5 text-white flex justify-between items-center">
+                <h3 class="font-bold text-base sm:text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-file-arrow-down text-emerald-400"></i> ศูนย์ดาวน์โหลดรายงาน (Download Reports)
+                </h3>
+                <button onclick="closeReportModal()" class="text-slate-300 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5 uppercase">1. เลือกประเภทข้อมูลที่ต้องการส่งออก</label>
+                    <select id="reportDataType" class="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                        <option value="inventory">รายงานวัตถุดิบและสต๊อกคงเหลือปัจจุบัน</option>
+                        <option value="history">รายงานประวัติการทำรายการ (รับเข้า-จ่ายออก)</option>
+                        <option value="waste">รายงานสรุปของเสีย และของตัดแต่ง</option>
+                        <option value="low_stock">ใบสั่งซื้อวัตถุดิบ (สินค้าต่ำกว่า Min)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5 uppercase">2. เลือกรูปแบบไฟล์ (File Format)</label>
+                    <div class="grid grid-cols-3 gap-3">
+                        <label class="cursor-pointer">
+                            <input type="radio" name="fileFormat" value="xlsx" checked class="peer sr-only">
+                            <div class="p-3 border border-slate-200 rounded-xl text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 transition">
+                                <i class="fa-solid fa-file-excel text-xl text-emerald-600 mb-1 block"></i>
+                                <span class="text-xs font-bold">Excel (.xlsx)</span>
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="fileFormat" value="csv" class="peer sr-only">
+                            <div class="p-3 border border-slate-200 rounded-xl text-center peer-checked:border-slate-500 peer-checked:bg-slate-100 peer-checked:text-slate-700 transition">
+                                <i class="fa-solid fa-file-csv text-xl text-slate-600 mb-1 block"></i>
+                                <span class="text-xs font-bold">CSV File (.csv)</span>
+                            </div>
+                        </label>
+                        <label class="cursor-pointer">
+                            <input type="radio" name="fileFormat" value="pdf" class="peer sr-only">
+                            <div class="p-3 border border-slate-200 rounded-xl text-center peer-checked:border-rose-500 peer-checked:bg-rose-50 peer-checked:text-rose-700 transition">
+                                <i class="fa-solid fa-file-pdf text-xl text-rose-600 mb-1 block"></i>
+                                <span class="text-xs font-bold">PDF Document</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 p-4 bg-slate-50 border-t border-slate-100">
+                <button type="button" onclick="closeReportModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition">
+                    ยกเลิก
+                </button>
+                <button type="button" onclick="processReportDownload()" class="px-5 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-coco-900 rounded-xl shadow-md transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> เริ่มดาวน์โหลด
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: PROFILE SETTINGS -->
+    <div id="profileModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                <h3 class="text-lg font-bold text-slate-800">ตั้งค่าโปรไฟล์และรหัสผ่าน</h3>
+                <button onclick="closeProfileModal()" class="text-slate-400 hover:text-slate-600 transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <form onsubmit="updateUserProfile(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">ชื่อผู้ใช้งาน (Display Name)</label>
+                    <input type="text" id="profileName" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-coco-500" required>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">อีเมล / Username</label>
+                    <input type="email" id="profileEmail" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-100 text-slate-500 cursor-not-allowed" readonly>
+                </div>
+
+                <hr class="my-2 border-slate-100">
+                <p class="text-xs text-amber-600 font-medium">เปลี่ยนรหัสผ่าน (หากไม่ต้องการเปลี่ยน ให้เว้นว่างไว้)</p>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">รหัสผ่านปัจจุบัน</label>
+                    <input type="password" id="currentPassword" placeholder="กรอกรหัสผ่านเดิมเพื่อยืนยัน" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-coco-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">รหัสผ่านใหม่</label>
+                    <input type="password" id="newPassword" placeholder="อย่างน้อย 6 ตัวอักษร" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-coco-500">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeProfileModal()" class="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg font-medium transition">ยกเลิก</button>
+                    <button type="submit" class="px-4 py-2 text-sm bg-coco-500 text-white font-medium rounded-lg hover:bg-coco-600 transition">บันทึกข้อมูล</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        const API_BASE_URL = window.location.origin + '/api';
+        let inventoryData = [];
+        let categoriesData = [];
+        let usersData = [];
+        let wasteLogsData = [];
+        let autoRefreshInterval = null;
+
+        // Pagination Variables
+        let currentPage = 1;
+        const itemsPerPage = 20;
+        let tableDataList = [];
+
+        function parseUserIdSafely(id) {
+            if (typeof id === 'string') {
+                return parseInt(id.replace(/\D/g, ''), 10) || 1;
+            }
+            return parseInt(id, 10) || 1;
+        }
+
+        // =======================================================
+        // 0. Toggle Mobile Hamburger Menu
+        // =======================================================
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobileNavMenu');
+            if (menu) {
+                menu.classList.toggle('hidden');
+            }
+        }
+
+        // =======================================================
+        // 1. Tab Navigation Handler
+        // =======================================================
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-coco-800', 'text-white', 'shadow-sm');
+                btn.classList.add('text-slate-600', 'hover:bg-slate-100');
+            });
+
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            const activeBtn = document.getElementById(`nav-${tabName}`);
+
+            if (activeTab) activeTab.classList.remove('hidden');
+            if (activeBtn) {
+                activeBtn.classList.remove('text-slate-600', 'hover:bg-slate-100');
+                activeBtn.classList.add('bg-coco-800', 'text-white', 'shadow-sm');
+            }
+
+            if (window.innerWidth < 640) {
+                const menu = document.getElementById('mobileNavMenu');
+                if (menu) menu.classList.add('hidden');
+            }
+
+            if (tabName === 'receiving') populateReceivingDropdown();
+            if (tabName === 'history') renderHistoryTable();
+            if (tabName === 'waste') loadWasteSummary();
+            if (tabName === 'users') loadUsersData();
+        }
+
+        function checkAdminPermissions() {
+            const role = (currentUser?.role || '').toLowerCase();
+            if (role === 'admin') {
+                const usersNav = document.getElementById('nav-users');
+                if (usersNav) usersNav.classList.remove('hidden');
+            }
+        }
+
+        // =======================================================
+        // 2. Fetch Categories & Inventory Data
+        // =======================================================
+        async function loadCategories() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/categories`);
+                if (res.ok) {
+                    categoriesData = await res.json();
+                    
+                    const dashFilter = document.getElementById('dashboardCategoryFilter');
+                    const modalCatSelect = document.getElementById('modalCategoryId');
+                    
+                    if (dashFilter) {
+                        dashFilter.innerHTML = '<option value="">-- หมวดหมู่ทั้งหมด --</option>';
+                        categoriesData.forEach(c => {
+                            dashFilter.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+                        });
+                    }
+
+                    if (modalCatSelect) {
+                        modalCatSelect.innerHTML = '<option value="">-- เลือกหมวดหมู่ --</option>';
+                        categoriesData.forEach(c => {
+                            modalCatSelect.insertAdjacentHTML('beforeend', `<option value="${c.id}">${c.name}</option>`);
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading categories:', err);
+            }
+        }
+
+        async function loadInventoryData() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/inventory`);
+                if (res.ok) {
+                    inventoryData = await res.json();
+                    renderDashboard();
+                    renderStockCountTables();
+                }
+            } catch (err) {
+                console.error('Error fetching inventory:', err);
+            }
+        }
+
+        function renderDashboard() {
+            const tbody = document.getElementById('dashboardTableBody');
+            if (!tbody) return;
+
+            const selectedCat = document.getElementById('dashboardCategoryFilter')?.value || '';
+            const searchKeyword = document.getElementById('dashboardSearch')?.value.toLowerCase().trim() || '';
+
+            let filtered = inventoryData.filter(item => {
+                const matchCat = selectedCat === '' || String(item.category_id) === String(selectedCat);
+                const matchSearch = searchKeyword === '' || 
+                    item.name.toLowerCase().includes(searchKeyword) || 
+                    item.item_code.toLowerCase().includes(searchKeyword);
+                return matchCat && matchSearch;
+            });
+
+            let totalItems = inventoryData.length;
+            let lowStockCount = 0;
+            let totalValue = 0;
+
+            inventoryData.forEach(item => {
+                const remaining = parseFloat(item.remaining_qty || 0);
+                const minThresh = parseFloat(item.min_threshold || 0);
+                const cost = parseFloat(item.unit_cost || 0);
+                totalValue += (remaining * cost);
+                if (remaining <= minThresh) lowStockCount++;
+            });
+
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-400">ไม่พบรายการวัตถุดิบที่ตรงกับเงื่อนไขการค้นหา</td></tr>`;
+            } else {
+                filtered.forEach(item => {
+                    const remaining = parseFloat(item.remaining_qty || 0);
+                    const minThresh = parseFloat(item.min_threshold || 0);
+                    const cost = parseFloat(item.unit_cost || 0);
+                    const val = remaining * cost;
+                    const isLow = remaining <= minThresh;
+
+                    const row = `
+                        <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs sm:text-sm">
+                            <td class="p-3 pl-4 sm:pl-5 font-medium text-slate-800">
+                                <div>${item.name}</div>
+                                <div class="text-[10px] text-slate-400 font-mono">${item.item_code}</div>
+                            </td>
+                            <td class="p-3 text-slate-500">${item.category_name || 'ทั่วไป'}</td>
+                            <td class="p-3 text-right font-bold ${isLow ? 'text-rose-600' : 'text-slate-800'}">${remaining}</td>
+                            <td class="p-3 text-center text-slate-500">${item.unit}</td>
+                            <td class="p-3 text-right font-mono text-slate-600">฿${cost.toFixed(2)}</td>
+                            <td class="p-3 text-right font-mono font-semibold text-slate-800">฿${val.toFixed(2)}</td>
+                            <td class="p-3 text-center">
+                                ${isLow 
+                                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">สต๊อกต่ำ</span>' 
+                                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">ปกติ</span>'}
+                            </td>
+                            <td class="p-3 text-center pr-4 sm:pr-5">
+                                <div class="flex items-center justify-center gap-1">
+                                    <button onclick="openEditItemModal(${item.id})" title="แก้ไขวัตถุดิบ" class="bg-amber-100 hover:bg-amber-200 text-amber-800 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>
+                                    <button onclick="deleteItem(${item.id}, '${item.name}')" title="ลบวัตถุดิบ" class="bg-rose-100 hover:bg-rose-200 text-rose-700 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.insertAdjacentHTML('beforeend', row);
+                });
+            }
+
+            document.getElementById('statTotalItems').innerText = totalItems;
+            document.getElementById('statLowStock').innerText = lowStockCount;
+            document.getElementById('statTotalValue').innerText = `฿${totalValue.toLocaleString('th-TH', {minimumFractionDigits: 2})}`;
+            document.getElementById('lastUpdatedTime').innerText = `อัปเดตล่าสุด: ${new Date().toLocaleTimeString('th-TH')}`;
+        }
+
+        function clearDashboardFilter() {
+            if (document.getElementById('dashboardCategoryFilter')) document.getElementById('dashboardCategoryFilter').value = '';
+            if (document.getElementById('dashboardSearch')) document.getElementById('dashboardSearch').value = '';
+            renderDashboard();
+        }
+
+        // =======================================================
+        // 3. Stock Count (Daily & Monthly)
+        // =======================================================
+        function renderStockCountTables() {
+            const dailyBody = document.getElementById('dailyStockTableBody');
+            const monthlyBody = document.getElementById('monthlyStockTableBody');
+            const today = new Date().toLocaleDateString('th-TH');
+
+            if (document.getElementById('dailyCountDate')) document.getElementById('dailyCountDate').innerText = today;
+            if (document.getElementById('monthlyCountDate')) document.getElementById('monthlyCountDate').innerText = today;
+
+            if (dailyBody) dailyBody.innerHTML = '';
+            if (monthlyBody) monthlyBody.innerHTML = '';
+
+            inventoryData.forEach(item => {
+                const systemQty = parseFloat(item.remaining_qty || 0);
+                const unitCost = parseFloat(item.unit_cost || 0);
+
+                const rowHtml = `
+                    <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs">
+                        <td class="p-3 pl-4 sm:pl-5 font-medium text-slate-800">
+                            <div>${item.name}</div>
+                            <div class="text-[10px] text-slate-400 font-mono">${item.item_code}</div>
+                        </td>
+                        <td class="p-3 text-slate-500">${item.unit}</td>
+                        <td class="p-3 text-right font-semibold text-slate-700">${systemQty}</td>
+                        <td class="p-3 text-center">
+                            <input type="number" step="any" id="count-input-${item.id}" data-item-id="${item.id}"
+                                data-system-qty="${systemQty}"
+                                data-unit-cost="${unitCost}"
+                                oninput="calculateDiff(this)"
+                                placeholder="${systemQty}"
+                                class="w-24 px-2 py-1 text-center bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-coco-500 font-bold text-slate-800">
+                        </td>
+                        <td class="p-3 text-right font-bold diff-qty text-slate-400">-</td>
+                        <td class="p-3 text-right font-bold diff-value text-slate-400">-</td>
+                        <td class="p-3 pr-4 sm:pr-5">
+                            <input type="text" id="note-input-${item.id}" placeholder="หมายเหตุ (ถ้ามี)" class="w-full px-2 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg">
+                        </td>
+                    </tr>
+                `;
+                if (dailyBody) dailyBody.insertAdjacentHTML('beforeend', rowHtml);
+                if (monthlyBody) monthlyBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+        }
+
+        function calculateDiff(inputElement) {
+            const row = inputElement.closest('tr');
+            if (!row) return;
+
+            const systemQty = parseFloat(inputElement.dataset.systemQty || 0);
+            const unitCost = parseFloat(inputElement.dataset.unitCost || 0);
+            const inputValue = inputElement.value.trim();
+
+            const diffQtyEl = row.querySelector('.diff-qty');
+            const diffValueEl = row.querySelector('.diff-value');
+
+            if (!diffQtyEl || !diffValueEl) return;
+
+            if (inputValue === '' || isNaN(inputValue)) {
+                diffQtyEl.textContent = '-';
+                diffQtyEl.className = 'p-3 text-right font-bold diff-qty text-slate-400';
+                diffValueEl.textContent = '-';
+                diffValueEl.className = 'p-3 text-right font-bold diff-value text-slate-400';
+                return;
+            }
+
+            const actualQty = parseFloat(inputValue);
+            const rawDiffQty = actualQty - systemQty;
+            const diffQty = Math.round(rawDiffQty * 100) / 100; 
+            const diffValue = Math.round((diffQty * unitCost) * 100) / 100;
+            const formattedQtyStr = Math.abs(diffQty).toFixed(2);
+
+            if (diffQty > 0) {
+                diffQtyEl.textContent = `+${formattedQtyStr}`;
+            } else if (diffQty < 0) {
+                diffQtyEl.textContent = `-${formattedQtyStr}`;
+            } else {
+                diffQtyEl.textContent = `0.00`;
+            }
+
+            diffValueEl.textContent = diffValue.toLocaleString('th-TH', { 
+                minimumFractionDigits: 2, 
+                maximumFractionDigits: 2 
+            });
+
+            if (diffQty < 0) {
+                diffQtyEl.className = 'p-3 text-right font-bold diff-qty text-rose-600';
+                diffValueEl.className = 'p-3 text-right font-bold diff-value text-rose-600';
+            } else if (diffQty > 0) {
+                diffQtyEl.className = 'p-3 text-right font-bold diff-qty text-emerald-600';
+                diffValueEl.className = 'p-3 text-right font-bold diff-value text-emerald-600';
+            } else {
+                diffQtyEl.className = 'p-3 text-right font-bold diff-qty text-slate-500';
+                diffValueEl.className = 'p-3 text-right font-bold diff-value text-slate-500';
+            }
+        }
+
+        async function saveStockCount(countType) {
+            const inputs = document.querySelectorAll('input[id^="count-input-"]');
+            let updatedCount = 0;
+
+            for (let input of inputs) {
+                const itemId = input.getAttribute('data-item-id');
+                const newQtyVal = input.value.trim();
+                const noteInput = document.getElementById(`note-input-${itemId}`);
+                const note = noteInput ? noteInput.value : '';
+
+                if (newQtyVal !== '' && !isNaN(newQtyVal)) {
+                    await submitStockCount(parseInt(itemId), countType.toUpperCase(), parseFloat(newQtyVal));
+                    updatedCount++;
+                }
+            }
+
+            if (updatedCount > 0) {
+                alert(`บันทึกผลการนับสต๊อกสำเร็จทั้งหมด ${updatedCount} รายการ!`);
+                await loadInventoryData();
+            } else {
+                alert('กรุณากรอกจำนวนตัวเลขยอดนับจริงอย่างน้อย 1 รายการ');
+            }
+        }
+
+        async function submitStockCount(itemId, countType, qty, overwrite = false) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/stock-count`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        item_id: itemId,
+                        count_type: countType,
+                        counted_qty: qty,
+                        user_id: parseUserIdSafely(currentUser.id),
+                        overwrite: overwrite
+                    })
+                });
+
+                if (response.status === 409) {
+                    const result = await response.json();
+                    const confirmOverwrite = confirm(
+                        `${result.message}\n(จำนวนเดิมที่เคยบันทึกไว้: ${result.existingQty})`
+                    );
+                    
+                    if (confirmOverwrite) {
+                        await submitStockCount(itemId, countType, qty, true);
+                    }
+                    return;
+                }
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Error: ' + (errorData.error || 'ไม่สามารถบันทึกได้'));
+                }
+            } catch (err) {
+                console.error('Error submitting stock count:', err);
+            }
+        }
+
+        // =======================================================
+        // 4. Item CRUD Operations
+        // =======================================================
+        function openAddItemModal() {
+            document.getElementById('modalItemId').value = '';
+            document.getElementById('itemModalTitle').innerHTML = '<i class="fa-solid fa-plus text-emerald-400"></i> เพิ่มวัตถุดิบใหม่';
+            document.getElementById('itemForm').reset();
+            document.getElementById('initialQtyContainer').classList.remove('hidden');
+            document.getElementById('itemModal').classList.remove('hidden');
+        }
+
+        function openEditItemModal(id) {
+            const item = inventoryData.find(i => i.id === id);
+            if (!item) return;
+
+            document.getElementById('modalItemId').value = item.id;
+            document.getElementById('modalItemCode').value = item.item_code;
+            document.getElementById('modalItemName').value = item.name;
+            document.getElementById('modalCategoryId').value = item.category_id || 1;
+            document.getElementById('modalUnit').value = item.unit;
+            document.getElementById('modalUnitCost').value = item.unit_cost;
+            document.getElementById('modalMinThreshold').value = item.min_threshold;
+            
+            document.getElementById('itemModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-amber-400"></i> แก้ไขข้อมูลวัตถุดิบ';
+            document.getElementById('initialQtyContainer').classList.add('hidden');
+            document.getElementById('itemModal').classList.remove('hidden');
+        }
+
+        function closeItemModal() {
+            document.getElementById('itemModal').classList.add('hidden');
+        }
+
+        async function handleSaveItem(event) {
+            event.preventDefault();
+            const id = document.getElementById('modalItemId').value;
+
+            const payload = {
+                item_code: document.getElementById('modalItemCode').value,
+                name: document.getElementById('modalItemName').value,
+                category_id: parseInt(document.getElementById('modalCategoryId').value) || 1,
+                unit: document.getElementById('modalUnit').value,
+                unit_cost: parseFloat(document.getElementById('modalUnitCost').value) || 0,
+                min_threshold: parseFloat(document.getElementById('modalMinThreshold').value) || 0,
+                remaining_qty: parseFloat(document.getElementById('modalInitialQty').value || 0)
+            };
+
+            try {
+                const url = id ? `${API_BASE_URL}/inventory/${id}` : `${API_BASE_URL}/inventory`;
+                const method = id ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    alert(id ? 'แก้ไขข้อมูลวัตถุดิบเรียบร้อยแล้ว' : 'เพิ่มวัตถุดิบใหม่เรียบร้อยแล้ว');
+                    closeItemModal();
+                    loadInventoryData();
+                } else {
+                    const err = await response.json();
+                    alert('เกิดข้อผิดพลาด: ' + (err.error || 'ไม่สามารถบันทึกได้'));
+                }
+            } catch (err) {
+                console.error('Error saving item:', err);
+                alert('ไม่สามารถเชื่อมต่อกับ Server ได้');
+            }
+        }
+
+        async function deleteItem(id, name) {
+            if (!confirm(`คุณต้องการลบรายการวัตถุดิบ "${name}" ใช่หรือไม่?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/inventory/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    alert('ลบวัตถุดิบเรียบร้อยแล้ว');
+                    loadInventoryData();
+                } else {
+                    const err = await response.json();
+                    alert('เกิดข้อผิดพลาด: ' + err.error);
+                }
+            } catch (err) {
+                console.error('Error deleting item:', err);
+            }
+        }
+
+        // =======================================================
+        // 5. Receiving & History with Pagination
+        // =======================================================
+        function populateReceivingDropdown() {
+            const select = document.getElementById('recvItemId');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">-- เลือกรายการวัตถุดิบ --</option>';
+            inventoryData.forEach(item => {
+                select.insertAdjacentHTML('beforeend', `<option value="${item.id}">${item.item_code} - ${item.name} (คงเหลือ: ${item.remaining_qty} ${item.unit})</option>`);
+            });
+        }
+
+        async function handleStockReceiving(event) {
+            event.preventDefault();
+            const itemId = document.getElementById('recvItemId').value;
+            const qty = parseFloat(document.getElementById('recvQty').value);
+            const totalPrice = parseFloat(document.getElementById('recvTotalPrice').value || 0);
+            const note = document.getElementById('recvNote').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/stock/movement`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        item_id: parseInt(itemId),
+                        type: 'IN',
+                        qty: qty,
+                        user_id: parseUserIdSafely(currentUser.id),
+                        note: `รับเข้า: ${note} ${totalPrice > 0 ? `(ยอดซื้อ: ${totalPrice} บ.)` : ''}`
+                    })
+                });
+
+                if (response.ok) {
+                    alert('บันทึกรับเข้าวัตถุดิบสำเร็จ!');
+                    document.getElementById('receivingForm').reset();
+                    await loadInventoryData();
+                    populateReceivingDropdown();
+                }
+            } catch (err) {
+                console.error('Error receiving stock:', err);
+            }
+        }
+
+        async function renderHistoryTable() {
+            const selectedDate = document.getElementById('historyFilterDate')?.value;
+            
+            try {
+                const res = await fetch(`${API_BASE_URL}/stock/history`);
+                if (res.ok) {
+                    let logs = await res.json();
+                    
+                    if (selectedDate) {
+                        logs = logs.filter(log => {
+                            if (!log.created_at) return false;
+                            const logDate = new Date(log.created_at).toLocaleDateString('sv-SE');
+                            return logDate === selectedDate;
+                        });
+                    }
+
+                    renderPaginatedTable(logs);
+                }
+            } catch (err) {
+                console.error('Error fetching history:', err);
+            }
+        }
+
+        function renderTableRows(pageData) {
+            const tbody = document.getElementById('historyTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (pageData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-400">ไม่พบประวัติรายการในวันที่เลือก</td></tr>`;
+                return;
+            }
+
+            pageData.forEach(log => {
+                const typeColor = log.type === 'IN' 
+                    ? 'bg-emerald-100 text-emerald-700' 
+                    : log.type === 'OUT' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700';
+
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs">
+                        <td class="p-3 font-mono text-slate-500">${new Date(log.created_at).toLocaleString('th-TH')}</td>
+                        <td class="p-3 font-medium text-slate-800">${log.item_name || '-'}</td>
+                        <td class="p-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${typeColor}">
+                                ${log.type === 'IN' ? 'รับเข้า' : log.type === 'OUT' ? 'จ่ายออก/เสีย' : 'ปรับสต๊อก'}
+                            </span>
+                        </td>
+                        <td class="p-3 text-right font-bold">${log.qty} ${log.unit || ''}</td>
+                        <td class="p-3 text-slate-600">${log.user_name || 'Admin'}</td>
+                        <td class="p-3 text-slate-500">${log.note || '-'}</td>
+                    </tr>
+                `);
+            });
+        }
+
+        function renderPaginatedTable(data) {
+            tableDataList = data || [];
+            const totalItems = tableDataList.length;
+            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+            
+            const pageData = tableDataList.slice(startIndex, endIndex);
+
+            renderTableRows(pageData);
+            updatePaginationUI(startIndex, endIndex, totalItems, totalPages);
+        }
+
+        function updatePaginationUI(startIndex, endIndex, totalItems, totalPages) {
+            const infoElem = document.getElementById('paginationInfo');
+            const prevBtn = document.getElementById('btnPrevPage');
+            const nextBtn = document.getElementById('btnNextPage');
+            const pageNumbers = document.getElementById('pageNumbers');
+
+            if (infoElem) {
+                infoElem.innerText = totalItems > 0 
+                    ? `แสดง ${startIndex + 1} ถึง ${endIndex} จากทั้งหมด ${totalItems} รายการ`
+                    : 'ไม่พบข้อมูล';
+            }
+
+            if (prevBtn) prevBtn.disabled = currentPage === 1;
+            if (nextBtn) nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+
+            if (pageNumbers) {
+                pageNumbers.innerHTML = '';
+                for (let i = 1; i <= totalPages; i++) {
+                    if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                        const btn = document.createElement('button');
+                        btn.className = `px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                            i === currentPage 
+                                ? 'bg-coco-800 text-white' 
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                        }`;
+                        btn.innerText = i;
+                        btn.onclick = () => {
+                            currentPage = i;
+                            renderPaginatedTable(tableDataList);
+                        };
+                        pageNumbers.appendChild(btn);
+                    } else if (i === currentPage - 2 || i === currentPage + 2) {
+                        const dots = document.createElement('span');
+                        dots.className = 'px-1 text-slate-400 align-bottom';
+                        dots.innerText = '...';
+                        pageNumbers.appendChild(dots);
+                    }
+                }
+            }
+        }
+
+        function changePage(direction) {
+            currentPage += direction;
+            renderPaginatedTable(tableDataList);
+        }
+
+        function clearHistoryFilter() {
+            if (document.getElementById('historyFilterDate')) document.getElementById('historyFilterDate').value = '';
+            renderHistoryTable();
+        }
+
+        // =======================================================
+        // 6. Waste Management
+        // =======================================================
+        function openAddWasteModal() {
+            const select = document.getElementById('wasteItemId');
+            if (select) {
+                select.innerHTML = '<option value="">-- เลือกวัตถุดิบ --</option>';
+                inventoryData.forEach(item => {
+                    select.insertAdjacentHTML('beforeend', `<option value="${item.id}">${item.item_code} - ${item.name}</option>`);
+                });
+            }
+            document.getElementById('wasteForm').reset();
+            document.getElementById('wasteModal').classList.remove('hidden');
+        }
+
+        function closeWasteModal() {
+            document.getElementById('wasteModal').classList.add('hidden');
+        }
+
+        async function handleSaveWaste(event) {
+            event.preventDefault();
+            const itemId = document.getElementById('wasteItemId').value;
+            const qty = parseFloat(document.getElementById('wasteQty').value);
+            const wasteType = document.getElementById('wasteType').value;
+            const reason = document.getElementById('wasteReason').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/waste`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        item_id: parseInt(itemId),
+                        qty: qty,
+                        waste_type: wasteType,
+                        reason: reason,
+                        user_id: parseUserIdSafely(currentUser.id)
+                    })
+                });
+
+                if (response.ok) {
+                    alert('บันทึกของเสียและปรับสต๊อกเรียบร้อยแล้ว');
+                    closeWasteModal();
+                    await loadInventoryData();
+                    await loadWasteSummary();
+                } else {
+                    const err = await response.json();
+                    alert('เกิดข้อผิดพลาด: ' + (err.error || 'ไม่สามารถบันทึกได้'));
+                }
+            } catch (err) {
+                console.error('Error saving waste log:', err);
+            }
+        }
+
+        async function loadWasteSummary() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/waste`);
+                if (!res.ok) return;
+                
+                wasteLogsData = await res.json();
+                renderWasteTable();
+            } catch (err) {
+                console.error('Error loading waste summary:', err);
+            }
+        }
+
+        function renderWasteTable() {
+            const tbody = document.getElementById('wasteTableBody');
+            if (!tbody) return;
+
+            const dateFilter = document.getElementById('wasteDateFilter')?.value || '';
+            const typeFilter = document.getElementById('wasteTypeFilter')?.value || '';
+
+            let filtered = wasteLogsData.filter(log => {
+                const logDate = new Date(log.created_at).toLocaleDateString('sv-SE');
+                const matchDate = !dateFilter || logDate === dateFilter;
+                const matchType = !typeFilter || log.waste_type === typeFilter;
+                return matchDate && matchType;
+            });
+
+            tbody.innerHTML = '';
+            
+            let todayTotal = 0;
+            let monthTrimTotal = 0;
+            const todayStr = new Date().toLocaleDateString('sv-SE');
+
+            wasteLogsData.forEach(log => {
+                const cost = parseFloat(log.unit_cost || 0);
+                const qty = parseFloat(log.qty || 0);
+                const total = parseFloat(log.total_cost || (cost * qty));
+                const logDateStr = new Date(log.created_at).toLocaleDateString('sv-SE');
+
+                if (logDateStr === todayStr) todayTotal += total;
+                if (log.waste_type === 'TRIM') monthTrimTotal += total;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400">ไม่พบรายการของเสียตามเงื่อนไขที่เลือก</td></tr>';
+            } else {
+                filtered.forEach(log => {
+                    const cost = parseFloat(log.unit_cost || 0);
+                    const qty = parseFloat(log.qty || 0);
+                    const total = parseFloat(log.total_cost || (cost * qty));
+
+                    tbody.insertAdjacentHTML('beforeend', `
+                        <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs">
+                            <td class="p-2.5 font-mono text-slate-500">${new Date(log.created_at).toLocaleString('th-TH')}</td>
+                            <td class="p-2.5 font-medium text-slate-800">${log.item_name || '-'}</td>
+                            <td class="p-2.5 text-center">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${log.waste_type === 'TRIM' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}">
+                                    ${log.waste_type === 'TRIM' ? 'ของตัดแต่ง' : log.waste_type === 'EXPIRE' ? 'หมดอายุ' : 'ของเสีย'}
+                                </span>
+                            </td>
+                            <td class="p-2.5 text-right font-bold text-slate-700">${qty} ${log.unit || ''}</td>
+                            <td class="p-2.5 text-right font-bold text-rose-600">฿${total.toFixed(2)}</td>
+                            <td class="p-2.5 text-slate-500">${log.reason || '-'}</td>
+                            <td class="p-2.5 text-center pr-4">
+                                <div class="flex items-center justify-center gap-1">
+                                    <button onclick="editWasteLog(${log.id}, ${qty}, '${log.waste_type}', '${log.reason || ''}')" title="แก้ไข" class="bg-amber-100 hover:bg-amber-200 text-amber-800 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>
+                                    <button onclick="deleteWasteLog(${log.id})" title="ลบ" class="bg-rose-100 hover:bg-rose-200 text-rose-700 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `);
+                });
+            }
+
+            document.getElementById('todayWasteValue').innerText = `฿${todayTotal.toFixed(2)}`;
+            document.getElementById('monthTrimValue').innerText = `฿${monthTrimTotal.toFixed(2)}`;
+            document.getElementById('wasteItemCount').innerText = `${wasteLogsData.length} รายการ`;
+        }
+
+        function clearWasteFilter() {
+            if (document.getElementById('wasteDateFilter')) document.getElementById('wasteDateFilter').value = '';
+            if (document.getElementById('wasteTypeFilter')) document.getElementById('wasteTypeFilter').value = '';
+            renderWasteTable();
+        }
+
+        async function deleteWasteLog(id) {
+            if (!confirm('คุณต้องการลบรายการของเสียนี้ใช่หรือไม่? (ระบบจะปรับคืนยอดวัตถุดิบเข้าคลังให้อัตโนมัติ)')) return;
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/waste/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    alert('ลบรายการของเสียและคืนยอดสต๊อกเรียบร้อยแล้ว');
+                    await loadInventoryData();
+                    await loadWasteSummary();
+                } else {
+                    const err = await res.json();
+                    alert('เกิดข้อผิดพลาด: ' + (err.error || 'ไม่สามารถลบได้'));
+                }
+            } catch (err) {
+                console.error('Error deleting waste log:', err);
+                alert('ไม่สามารถเชื่อมต่อ Server ได้');
+            }
+        }
+
+        async function editWasteLog(id, currentQty, currentType, currentReason) {
+            const newQtyStr = prompt('ระบุจำนวนเสียใหม่:', currentQty);
+            if (newQtyStr === null) return;
+
+            const newQty = parseFloat(newQtyStr);
+            if (isNaN(newQty) || newQty <= 0) {
+                alert('กรุณากรอกจำนวนตัวเลขที่ถูกต้อง');
+                return;
+            }
+
+            const newReason = prompt('ระบุเหตุผล/หมายเหตุ:', currentReason) || '';
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/waste/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        qty: newQty,
+                        waste_type: currentType,
+                        reason: newReason
+                    })
+                });
+
+                if (res.ok) {
+                    alert('แก้ไขข้อมูลเรียบร้อยแล้ว');
+                    await loadInventoryData();
+                    await loadWasteSummary();
+                } else {
+                    const err = await res.json();
+                    alert('เกิดข้อผิดพลาด: ' + (err.error || 'ไม่สามารถแก้ไขได้'));
+                }
+            } catch (err) {
+                console.error('Error updating waste log:', err);
+                alert('ไม่สามารถเชื่อมต่อ Server ได้');
+            }
+        }
+
+        // =======================================================
+        // 7. USERS MANAGEMENT LOGIC
+        // =======================================================
+        async function loadUsersData() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/users`);
+                if (res.ok) {
+                    usersData = await res.json();
+                    renderUsersTable();
+                }
+            } catch (err) {
+                console.error('Error fetching users:', err);
+            }
+        }
+
+        function renderUsersTable() {
+            const tbody = document.getElementById('usersTableBody');
+            if (!tbody) return;
+
+            let totalUsers = usersData.length;
+            let adminCount = 0;
+            let staffCount = 0;
+
+            tbody.innerHTML = '';
+
+            if (usersData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-400">ไม่พบรายการผู้ใช้งานในระบบ</td></tr>`;
+            } else {
+                usersData.forEach(u => {
+                    const roleUpper = (u.role || 'staff').toUpperCase();
+                    if (roleUpper === 'ADMIN') adminCount++;
+                    else staffCount++;
+
+                    const roleBadge = roleUpper === 'ADMIN' 
+                        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">Admin</span>'
+                        : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Staff</span>';
+
+                    const row = `
+                        <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs sm:text-sm">
+                            <td class="p-3 pl-4 sm:pl-5 font-medium text-slate-800">
+                                <div>${u.username}</div>
+                                <div class="text-[10px] text-slate-400 font-mono">ID: ${u.id}</div>
+                            </td>
+                            <td class="p-3 font-semibold text-slate-700">${u.name}</td>
+                            <td class="p-3 text-slate-500">${u.email || '-'}</td>
+                            <td class="p-3 text-center">${roleBadge}</td>
+                            <td class="p-3 text-center font-mono text-slate-400">${u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH') : '-'}</td>
+                            <td class="p-3 text-center pr-4 sm:pr-5">
+                                <div class="flex items-center justify-center gap-1">
+                                    <button onclick="openEditUserModal(${u.id})" title="แก้ไขผู้ใช้" class="bg-amber-100 hover:bg-amber-200 text-amber-800 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>
+                                    <button onclick="deleteUser(${u.id}, '${u.name}')" title="ลบผู้ใช้" class="bg-rose-100 hover:bg-rose-200 text-rose-700 p-1.5 rounded-lg text-xs transition">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.insertAdjacentHTML('beforeend', row);
+                });
+            }
+
+            document.getElementById('statTotalUsers').innerText = totalUsers;
+            document.getElementById('statAdminUsers').innerText = adminCount;
+            document.getElementById('statStaffUsers').innerText = staffCount;
+        }
+
+        function openAddUserModal() {
+            document.getElementById('modalUserId').value = '';
+            document.getElementById('userModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-emerald-400"></i> เพิ่มผู้ใช้งานใหม่';
+            document.getElementById('userForm').reset();
+            document.getElementById('modalUsername').removeAttribute('readonly');
+            document.getElementById('modalUsername').classList.remove('bg-slate-100', 'text-slate-500');
+            document.getElementById('modalRole').value = 'staff';
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function openEditUserModal(id) {
+            const user = usersData.find(u => u.id === id);
+            if (!user) return;
+
+            document.getElementById('modalUserId').value = user.id;
+            document.getElementById('modalUsername').value = user.username;
+            document.getElementById('modalUsername').setAttribute('readonly', 'true');
+            document.getElementById('modalUsername').classList.add('bg-slate-100', 'text-slate-500');
+            document.getElementById('modalName').value = user.name;
+            document.getElementById('modalEmail').value = user.email || '';
+            document.getElementById('modalRole').value = (user.role || 'staff').toLowerCase();
+            document.getElementById('modalPassword').value = '';
+
+            document.getElementById('userModalTitle').innerHTML = '<i class="fa-solid fa-user-pen text-amber-400"></i> แก้ไขข้อมูลผู้ใช้งาน';
+            document.getElementById('userModal').classList.remove('hidden');
+        }
+
+        function closeUserModal() {
+            document.getElementById('userModal').classList.add('hidden');
+        }
+
+        async function handleSaveUser(event) {
+            event.preventDefault();
+            const id = document.getElementById('modalUserId').value;
+            const selectedRole = document.getElementById('modalRole').value;
+
+            if (parseUserIdSafely(currentUser.id) === parseInt(id) && selectedRole !== (currentUser.role || '').toLowerCase()) {
+                if (!confirm('คุณกำลังเปลี่ยนบทบาทผู้ใช้ของบัญชีคุณเอง หากเปลี่ยนเป็น Staff คุณจะไม่สามารถเข้าถึงหน้านี้ได้อีก ต้องการดำเนินการต่อหรือไม่?')) {
+                    return;
+                }
+            }
+
+            const payload = {
+                username: document.getElementById('modalUsername').value.trim(),
+                name: document.getElementById('modalName').value.trim(),
+                email: document.getElementById('modalEmail').value.trim(),
+                role: selectedRole,
+                password: document.getElementById('modalPassword').value
+            };
+
+            try {
+                const url = id ? `${API_BASE_URL}/users/${id}` : `${API_BASE_URL}/users`;
+                const method = id ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    alert(id ? 'แก้ไขข้อมูลผู้ใช้งานเรียบร้อยแล้ว' : 'เพิ่มผู้ใช้งานใหม่เรียบร้อยแล้ว');
+                    
+                    if (parseUserIdSafely(currentUser.id) === parseInt(id)) {
+                        currentUser.role = selectedRole;
+                        currentUser.name = payload.name;
+                        localStorage.setItem('user_info', JSON.stringify(currentUser));
+                        location.reload();
+                        return;
+                    }
+
+                    closeUserModal();
+                    loadUsersData();
+                } else {
+                    const err = await response.json();
+                    alert('เกิดข้อผิดพลาด: ' + (err.error || 'ไม่สามารถบันทึกข้อมูลได้'));
+                }
+            } catch (err) {
+                console.error('Error saving user:', err);
+                alert('ไม่สามารถเชื่อมต่อ Server ได้');
+            }
+        }
+
+        async function deleteUser(id, name) {
+            if (parseUserIdSafely(currentUser.id) === id) {
+                alert('คุณไม่สามารถลบบัญชีผู้ใช้งานที่กำลังเข้าสู่ระบบอยู่ได้');
+                return;
+            }
+
+            if (!confirm(`คุณต้องการลบผู้ใช้งาน "${name}" ใช่หรือไม่?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    alert('ลบผู้ใช้งานเรียบร้อยแล้ว');
+                    loadUsersData();
+                } else {
+                    const err = await response.json();
+                    alert('เกิดข้อผิดพลาด: ' + err.error);
+                }
+            } catch (err) {
+                console.error('Error deleting user:', err);
+            }
+        }
+
+        // =======================================================
+        // 8. Profile & Reports Modal Logic
+        // =======================================================
+        function openReportModal() {
+            toggleUserDropdown();
+            document.getElementById('reportModal').classList.remove('hidden');
+        }
+
+        function closeReportModal() {
+            document.getElementById('reportModal').classList.add('hidden');
+        }
+
+        function openSettingsModal() {
+            toggleUserDropdown();
+            document.getElementById('profileName').value = currentUser?.name || '';
+            document.getElementById('profileEmail').value = currentUser?.email || '';
+            document.getElementById('currentPassword').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('profileModal').classList.remove('hidden');
+        }
+
+        function closeProfileModal() {
+            document.getElementById('profileModal').classList.add('hidden');
+        }
+
+        async function updateUserProfile(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('profileName').value.trim();
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+
+            if (newPassword && !currentPassword) {
+                alert('กรุณากรอกรหัสผ่านปัจจุบันเพื่อยืนยันการตั้งรหัสผ่านใหม่');
+                return;
+            }
+
+            if (newPassword && newPassword.length < 6) {
+                alert('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/profile`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: parseUserIdSafely(currentUser.id),
+                        name: name,
+                        current_password: currentPassword || null,
+                        new_password: newPassword || null
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('อัปเดตข้อมูลโปรไฟล์เรียบร้อยแล้ว!');
+                    currentUser.name = name;
+                    localStorage.setItem('user_info', JSON.stringify(currentUser));
+                    document.getElementById('displayUsername').innerText = name;
+                    closeProfileModal();
+                } else {
+                    alert(result.message || 'เกิดข้อผิดพลาดในการอัปเดตข้อมูล');
+                }
+            } catch (err) {
+                console.error('Error updating profile:', err);
+                alert('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์เพื่อบันทึกข้อมูลได้');
+            }
+        }
+
+        async function processReportDownload() {
+            const dataType = document.getElementById('reportDataType').value;
+            const format = document.querySelector('input[name="fileFormat"]:checked').value;
+
+            closeReportModal();
+
+            let dataToExport = [];
+            let fileName = "";
+
+            if (dataType === 'inventory') {
+                fileName = `CocoYeah_Inventory_${new Date().toISOString().split('T')[0]}`;
+                dataToExport = inventoryData.map((item, index) => ({
+                    "ลำดับ": index + 1,
+                    "รหัสวัตถุดิบ": item.item_code,
+                    "ชื่อวัตถุดิบ": item.name,
+                    "หมวดหมู่": item.category_name || 'ทั่วไป',
+                    "คงเหลือ": item.remaining_qty,
+                    "หน่วย": item.unit,
+                    "ราคา/หน่วย": item.unit_cost,
+                    "มูลค่ารวม": (parseFloat(item.remaining_qty || 0) * parseFloat(item.unit_cost || 0)).toFixed(2)
+                }));
+            } else if (dataType === 'low_stock') {
+                fileName = `CocoYeah_PurchaseOrder_LowStock_${new Date().toISOString().split('T')[0]}`;
+                const lowStockItems = inventoryData.filter(item => {
+                    const currentQty = parseFloat(item.remaining_qty || 0);
+                    const minQty = parseFloat(item.min_threshold || 0);
+                    return currentQty <= minQty;
+                });
+
+                dataToExport = lowStockItems.map((item, index) => {
+                    const currentQty = parseFloat(item.remaining_qty || 0);
+                    const minQty = parseFloat(item.min_threshold || 0);
+                    const suggestQty = Math.max(0, (minQty * 2) - currentQty);
+                    const unitCost = parseFloat(item.unit_cost || 0);
+
+                    return {
+                        "ลำดับ": index + 1,
+                        "รหัสวัตถุดิบ": item.item_code || '-',
+                        "ชื่อวัตถุดิบ": item.name,
+                        "หมวดหมู่": item.category_name || 'ทั่วไป',
+                        "คงเหลือปัจจุบัน": currentQty,
+                        "เกณฑ์ขั้นต่ำ (Min)": minQty,
+                        "จำนวนที่ต้องสั่งเพิ่ม": suggestQty,
+                        "หน่วยนับ": item.unit,
+                        "ราคาประมาณการ/หน่วย": unitCost,
+                        "ราคารวมสั่งซื้อประมาณการ": (suggestQty * unitCost).toFixed(2)
+                    };
+                });
+            } else if (dataType === 'history') {
+                fileName = `CocoYeah_StockHistory_${new Date().toISOString().split('T')[0]}`;
+                try {
+                    const selectedDate = document.getElementById('historyFilterDate')?.value || '';
+                    let url = `${API_BASE_URL}/stock/history` + (selectedDate ? `?date=${selectedDate}` : '');
+                    const res = await fetch(url);
+                    const logs = await res.json();
+                    
+                    dataToExport = logs.map((log, index) => ({
+                        "ลำดับ": index + 1,
+                        "วัน-เวลา": new Date(log.created_at).toLocaleString('th-TH'),
+                        "วัตถุดิบ": log.item_name || '-',
+                        "ประเภท": log.type === 'IN' ? 'รับเข้า' : log.type === 'OUT' ? 'จ่ายออก/เสีย' : 'ปรับสต๊อก',
+                        "จำนวน": `${log.qty} ${log.unit || ''}`,
+                        "ผู้บันทึก": log.user_name || 'Admin',
+                        "หมายเหตุ": log.note || '-'
+                    }));
+                } catch (e) {
+                    alert("ไม่สามารถดึงข้อมูลประวัติเพื่อดาวน์โหลดได้");
+                    return;
+                }
+            } else if (dataType === 'waste') {
+                fileName = `CocoYeah_WasteReport_${new Date().toISOString().split('T')[0]}`;
+                dataToExport = wasteLogsData.map((log, index) => ({
+                    "ลำดับ": index + 1,
+                    "วัน-เวลา": new Date(log.created_at).toLocaleString('th-TH'),
+                    "วัตถุดิบ": log.item_name || '-',
+                    "ประเภท": log.waste_type === 'TRIM' ? 'ของตัดแต่ง' : 'ของเสีย',
+                    "จำนวน": `${log.qty} ${log.unit || ''}`,
+                    "ราคาต้นทุน/หน่วย": log.unit_cost,
+                    "มูลค่าเสียหาย": (parseFloat(log.qty) * parseFloat(log.unit_cost || 0)).toFixed(2),
+                    "หมายเหตุ": log.reason || '-'
+                }));
+            }
+
+            if (dataToExport.length === 0) {
+                alert("ไม่มีข้อมูลสำหรับส่งออก");
+                return;
+            }
+
+            if (format === 'xlsx') {
+                const ws = XLSX.utils.json_to_sheet(dataToExport);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Report");
+                XLSX.writeFile(wb, `${fileName}.xlsx`);
+            } else if (format === 'csv') {
+                const ws = XLSX.utils.json_to_sheet(dataToExport);
+                const csv = XLSX.utils.sheet_to_csv(ws);
+                const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `${fileName}.csv`;
+                link.click();
+            } else if (format === 'pdf') {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const tableColumn = Object.keys(dataToExport[0]);
+                const tableRows = dataToExport.map(obj => Object.values(obj));
+
+                doc.text(fileName, 14, 15);
+                doc.autoTable({
+                    head: [tableColumn],
+                    body: tableRows,
+                    startY: 20,
+                    styles: { fontSize: 8 }
+                });
+                doc.save(`${fileName}.pdf`);
+            }
+        }
+
+        // Auto Refresh
+        function startAutoRefresh(seconds = 5) {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            autoRefreshInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/inventory`);
+                    if (response.ok) {
+                        inventoryData = await response.json();
+                        renderDashboard();
+                    }
+                } catch (err) {
+                    // Silent Fail
+                }
+            }, seconds * 1000);
+        }
+
+        // Init App
+        document.addEventListener('DOMContentLoaded', () => {
+            if (currentUser) {
+                const userDisp = document.getElementById('displayUsername');
+                const roleDisp = document.getElementById('displayRole');
+                if (userDisp) userDisp.innerText = currentUser.name || currentUser.username;
+                if (roleDisp) roleDisp.innerText = currentUser.role || 'STAFF';
+            }
+            checkAdminPermissions();
+            loadCategories();
+            loadInventoryData();
+            loadWasteSummary();
+            startAutoRefresh(5);
+        });
+    </script>
+</body>
+</html>
